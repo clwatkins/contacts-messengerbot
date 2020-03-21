@@ -59,11 +59,8 @@ func main() {
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/webhook", webhookHandler)
 
-	// Start the ListenAndService on a go routine to avoid blocking messageProcessor
-	go func() {
-		log.Println(http.ListenAndServe(":"+listenPort, nil))
-	}()
-	log.Println("Started HTTP server.")
+	log.Println("Starting HTTP server on port " + listenPort)
+	log.Println(http.ListenAndServe(":"+listenPort, nil))
 }
 
 // Simple Hello World handler for root server calls
