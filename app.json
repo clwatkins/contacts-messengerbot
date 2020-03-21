@@ -1,0 +1,10 @@
+{
+    "name": "CW Contacts Messengerbot",
+    "description": "Simple contact management app that interfaces to a Google Sheets database via Facebook Messenger.",
+    "repository": "https://github.com/clwatkins/contacts-messengerbot",
+    "buildpacks": [
+      {
+        "url": "heroku/go"
+      }
+    ]
+}
