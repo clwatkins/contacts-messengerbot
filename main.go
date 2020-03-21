@@ -13,6 +13,7 @@ var verifyToken string = os.Getenv("VERIFY_TOKEN")
 var pageAccessToken string = os.Getenv("PAGE_ACCESS_TOKEN")
 var listenPort string = os.Getenv("PORT")
 
+// Content of a Facebook message itself
 type facebookMessage struct {
 	Sender struct {
 		ID string `json:"id,omitempty"`
@@ -30,6 +31,7 @@ type facebookMessage struct {
 	} `json:"message,omitempty"`
 }
 
+// What is sent to the webook by Facebook with each new message
 type facebookMessagingEvent struct {
 	Object string `json:"object,omitempty"`
 	Entry  []struct {
@@ -66,10 +68,6 @@ func main() {
 
 // Simple Hello World handler for root server calls
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Hello, World!"))
 }
