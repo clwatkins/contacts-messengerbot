@@ -1,20 +1,20 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 )
 
-var verifyToken string = os.Getenv("VERIFY_TOKEN")
-var pageAccessToken string = os.Getenv("PAGE_ACCESS_TOKEN")
-var listenPort string = os.Getenv("PORT")
+var verifyToken = os.Getenv("VERIFY_TOKEN")
+var pageAccessToken = os.Getenv("PAGE_ACCESS_TOKEN")
+var listenPort = os.Getenv("PORT")
+var sheetsID = os.Getenv("GSHEET_DB_ID")
+var gsheetsCredsPath = os.Getenv("GSHEETS_CREDS_FILE")
 
-// Content of a Facebook message itself
-type facebookMessage struct {
+// FacebookMessage defines the content of a Facebook message itself
+type FacebookMessage struct {
 	Sender struct {
 		ID string `json:"id,omitempty"`
 	} `json:"sender,omitempty"`
@@ -31,30 +31,36 @@ type facebookMessage struct {
 	} `json:"message,omitempty"`
 }
 
-// What is sent to the webook by Facebook with each new message
-type facebookMessagingEvent struct {
+// FacebookMessagingEvent contains the content of a messaging event
+// This contains minimal metadata and then the core content of a FacebookMessage
+type FacebookMessagingEvent struct {
 	Object string `json:"object,omitempty"`
 	Entry  []struct {
 		ID        string            `json:"id,omitempty"`
 		Time      int               `json:"time,omitempty"`
-		Messaging []facebookMessage `json:"messaging,omitempty"`
+		Messaging []FacebookMessage `json:"messaging,omitempty"`
 	} `json:"entry,omitempty"`
 }
 
-// StatusError represents an error with an associated HTTP status code.
-type StatusError struct {
-	Code    int
-	Message string
-}
+// IncomingMessageChan accepts incoming FacebookMessages for processing
+var IncomingMessageChan = make(chan FacebookMessage)
 
-// Open a chan that will act as a message queue
-// Incoming messages will be added to the channel, with a worker routine for continuous processing
-var messageChan = make(chan facebookMessage)
+// OutgoingMessageChan accepts outgoing FacebookMessages to be sent
+var OutgoingMessageChan = make(chan FacebookMessage)
+
+// SheetsChan accepts outgoing SheetsPushRequests to be written
+var SheetsChan = make(chan SheetsPushRequest)
 
 func main() {
 
-	go messageProcessor(messageChan)
-	log.Println("Started message processor")
+	go IncomingMessageProcessor(IncomingMessageChan)
+	log.Println("Started incoming message processor")
+
+	go OutgoingMessageProcessor(OutgoingMessageChan)
+	log.Println("Started outgoing message processor")
+
+	go SheetsRequestProcessor(SheetsChan)
+	log.Println("Started Sheets request processor")
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/webhook", webhookHandler)
@@ -64,17 +70,27 @@ func main() {
 }
 
 // Simple Hello World handler for root server calls
-func indexHandler(w http.ResponseWriter, r *http.Request) {
+func indexHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hello, World!"))
+	_, err := w.Write([]byte("Hello, World!"))
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 }
 
-// Facebook will send stuff to the the webook endpoint
+// Facebook will send stuff to the the webhook endpoint
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	// GET methods are authentication routines
 	if r.Method == "GET" {
-		r.ParseForm()
+		err := r.ParseForm()
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		mode := r.Form.Get("hub.mode")
 		token := r.Form.Get("hub.verify_token")
 		challenge := r.Form.Get("hub.challenge")
@@ -82,24 +98,28 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 		if mode == "subscribe" && token == verifyToken {
 			log.Println("Authenticated successfully. Sending challenge back")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(challenge))
+			_, err := w.Write([]byte(challenge))
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
 		} else {
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Wrong mode or token"))
+			_, err := w.Write([]byte("Wrong mode or token"))
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
 		}
+
 	}
 
 	// POST messages are actual events to process, post-authentication calls
 	if r.Method == "POST" {
 
-		// Save a copy of this request for debugging.
-		// requestDump, err := httputil.DumpRequest(r, true)
-		// if err != nil {
-		// 	fmt.Println(err)
-		// }
-		// log.Print(string(requestDump))
-
-		receivedMessage := facebookMessagingEvent{}
+		receivedMessage := FacebookMessagingEvent{}
 		jsonErr := json.NewDecoder(r.Body).Decode(&receivedMessage)
 
 		if jsonErr != nil {
@@ -112,7 +132,12 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Respond to FB with receipt acknowledgement, process a response
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Received okay."))
+		_, err := w.Write([]byte("Received okay."))
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		log.Print("Acknowledged message receipt.")
 
 		for _, entry := range receivedMessage.Entry {
@@ -120,51 +145,8 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 			// https://developers.facebook.com/docs/messenger-platform/reference/webhook-events
 
 			// Add the message to our queue for processing
-			messageChan <- entry.Messaging[0]
+			IncomingMessageChan <- entry.Messaging[0]
 			log.Println("Added message to queue for processing.")
 		}
 	}
-}
-
-func messageProcessor(messageChan <-chan facebookMessage) {
-
-	// Will keep the go routine live as long as the channel is open
-	for message := range messageChan {
-		responseMsg := facebookMessage{MessagingType: "RESPONSE"}
-		responseMsg.Message.Text = message.Message.Text
-		responseMsg.Recipient.ID = message.Sender.ID
-
-		go sendResponseMessage(responseMsg)
-	}
-}
-
-func sendResponseMessage(responseMsg facebookMessage) {
-	responseURL, err := url.Parse("https://graph.facebook.com/v5.0/me/messages")
-
-	if err != nil {
-		log.Panic(err)
-	}
-
-	// Add access token as query param
-	queryParams := url.Values{}
-	queryParams.Add("access_token", pageAccessToken)
-	responseURL.RawQuery = queryParams.Encode()
-
-	jsonResponseMsg, _ := json.Marshal(responseMsg)
-
-	log.Println("Returning following JSON")
-	log.Printf("%+v\n", responseMsg)
-
-	resp, err := http.Post(
-		responseURL.String(),
-		"application/json",
-		bytes.NewBuffer(jsonResponseMsg),
-	)
-
-	if err != nil {
-		log.Panic("Got an unexpected response on sending FB message", err)
-	}
-
-	log.Println("Received following acknowledgement from FB messenger")
-	log.Print(resp)
 }

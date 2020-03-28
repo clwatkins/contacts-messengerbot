@@ -15,4 +15,7 @@
 # vendor/
 
 .env
+.idea
 bin/
+
+cw_gsheets_creds.json
