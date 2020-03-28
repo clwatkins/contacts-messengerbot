@@ -21,10 +21,32 @@ const (
 	ActionAdd = "MET"
 )
 
+var greetings = []string{"hello", "hi", "howdy", "yo"}
+
 //TODO(chriswatkins) cache contacts list periodically
 //TODO(chriswatkins) understand if someone is in the database
 
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
 func processStateClear(message FacebookMessage) string {
+
+	if stringInSlice(message.Message.Text, greetings) {
+		responseMsg := FacebookMessage{MessagingType: "RESPONSE"}
+		responseMsg.Message.Text = "Hi there!"
+		responseMsg.Recipient.ID = message.Sender.ID
+
+		OutgoingMessageChan <- responseMsg
+
+		return StateClear
+	}
+
 	var peopleAndComment = strings.SplitN(message.Message.Text, "/", 2)
 	var peopleSplit = strings.Split(peopleAndComment[0], ",")
 
