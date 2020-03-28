@@ -1,17 +1,51 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 	"log"
+	"os"
 )
+
+type googleCreds struct {
+	Type                string `json:"type,omitempty"`
+	ProjectID           string `json:"project_id,omitempty"`
+	PrivateKeyID        string `json:"private_key_id,omitempty"`
+	PrivateKey          string `json:"private_key,omitempty"`
+	ClientEmail         string `json:"client_email,omitempty"`
+	ClientID            string `json:"client_id,omitempty"`
+	AuthURI             string `json:"auth_uri,omitempty"`
+	TokenURI            string `json:"token_uri,omitempty"`
+	AuthProviderCertURL string `json:"auth_provider_x509_cert_url,omitempty"`
+	ClientCertURL       string `json:"client_x509_cert_url,omitempty"`
+}
 
 func newSpreadsheetService() *sheets.Service {
 	ctx := context.Background()
 
-	srv, err := sheets.NewService(ctx, option.WithCredentialsFile(gsheetsCredsPath), option.WithScopes(sheets.SpreadsheetsScope))
+	gcreds := googleCreds{
+		os.Getenv("GCREDS_TYPE"),
+		os.Getenv("GCREDS_PROJECT_ID"),
+		os.Getenv("GCREDS_PRIVATE_KEY_ID"),
+		os.Getenv("GCREDS_PRIVATE_KEY"),
+		os.Getenv("GCREDS_CLIENT_EMAIL"),
+		os.Getenv("GCREDS_CLIENT_ID"),
+		os.Getenv("GCREDS_AUTH_URI"),
+		os.Getenv("GCREDS_TOKEN_URI"),
+		os.Getenv("GCREDS_AUTH_PROVIDER_CERT_URL"),
+		os.Getenv("GCREDS_CLIENT_CERT_URL"),
+	}
+
+	gcredsJSON, err := json.Marshal(gcreds)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	srv, err := sheets.NewService(ctx, option.WithCredentialsJSON(gcredsJSON), option.WithScopes(sheets.SpreadsheetsScope))
 
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets Client %v", err)

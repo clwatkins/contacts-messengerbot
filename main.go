@@ -11,7 +11,6 @@ var verifyToken = os.Getenv("VERIFY_TOKEN")
 var pageAccessToken = os.Getenv("PAGE_ACCESS_TOKEN")
 var listenPort = os.Getenv("PORT")
 var sheetsID = os.Getenv("GSHEET_DB_ID")
-var gsheetsCredsPath = os.Getenv("GSHEETS_CREDS_FILE")
 
 // FacebookMessage defines the content of a Facebook message itself
 type FacebookMessage struct {
